@@ -90,8 +90,9 @@
     <div class="col"><span class="k">Generation</span><span class="v" id="gen">0</span></div>
     <div class="col"><span class="k">Best paper return</span><span class="v" id="bestRet">—</span></div>
     <div class="col"><span class="k">Last update</span><span class="v" id="updated">—</span></div>
-    <p class="note">Live cloud session, computer off: streams real-time prices for 50 stocks and decides
-      every 15 seconds. It breeds a population of strategies, keeps the winners, and trades the champion — 9:30–4 ET, paper money only.</p>
+    <p class="note">Live cloud session, computer off: streams every trade for 50 stocks and reacts the
+      moment one arrives — stop-losses and exits fire in milliseconds. Strategies evolve speed, stops and
+      entry filters; every fill pays realistic costs — 9:30–4 ET, paper money only.</p>
   </div>
   <div id="diag">Connecting…</div>
 
@@ -136,7 +137,7 @@
 const $ = id => document.getElementById(id);
 const money = n => (n<0?"-$":"$") + Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 const signPct = n => (n>=0?"+":"") + n.toFixed(2) + "%";
-const F_MIN=3,F_MAX=15,S_MIN=10,S_MAX=60, START=10000;
+const FT_MIN=5,FT_MAX=120,ST_MIN=20,ST_MAX=900, START=10000;
 
 function marketOpen(){
   const et=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour12:false,weekday:"short",hour:"numeric",minute:"numeric"})
@@ -146,7 +147,7 @@ function marketOpen(){
 }
 const lastPrice = (st,s)=>{ const h=st.hist[s]; return h&&h.length?h[h.length-1]:null; };
 const candEquity = (st,c)=> c.cash + (c.pos ? c.pos.qty*lastPrice(st,c.pos.sym) : 0);
-function momentum(st,s){ const e=st.rb&&st.rb.ema?st.rb.ema[s]:null; if(!e||e.f==null||!e.s) return 0; return (e.f-e.s)/e.s*100; }
+function momentum(st,s){ const e=st.rb&&st.rb.ema?st.rb.ema[s]:null; if(!e||!e.f||e.f.v==null||!e.s||!e.s.v) return 0; return (e.f.v-e.s.v)/e.s.v*100; }
 
 function stateURL(){
   const q=new URLSearchParams(location.search).get("state");
@@ -170,7 +171,9 @@ async function load(){
 function render(st){
   const open=marketOpen();
   $("mkt").textContent = open?"MARKET · OPEN":"MARKET · CLOSED"; $("mkt").className="pill "+(open?"live":"warn");
-  $("champ").textContent = st.champ?`EMA(${st.champ.fast} / ${st.champ.slow})`:"warming up…";
+  $("champ").textContent = st.champ && st.champ.ft
+    ? `τ ${st.champ.ft.toFixed(0)}s / ${st.champ.st.toFixed(0)}s · stop ${(st.champ.stop*100).toFixed(2)}%`
+    : "warming up…";
   $("gen").textContent = st.gen||0;
   $("bestRet").textContent = st.gen?signPct((st.bestRet||0)*100):"—";
   $("updated").textContent = st.updated?new Date(st.updated).toLocaleTimeString([],{hour12:false}):"—";
@@ -190,12 +193,12 @@ function render(st){
 
   // board
   const syms=Object.keys(st.hist||{}).sort((a,b)=>momentum(st,b)-momentum(st,a));
-  const warm = st.champ && st.rb && st.rb.count>st.champ.slow;
+  const warm = !!st.warm;
   const tb=$("rows"); tb.innerHTML="";
   for(const s of syms){
     const p=lastPrice(st,s), mom=momentum(st,s), e=st.rb&&st.rb.ema?st.rb.ema[s]:null;
-    const read = !warm||!e||e.f==null ? '<span class="tag">warming</span>'
-      : e.f>e.s?'<span class="tag bull">bull ▲</span>':'<span class="tag bear">bear ▼</span>';
+    const read = !warm||!e||!e.f||e.f.v==null ? '<span class="tag">warming</span>'
+      : e.f.v>e.s.v?'<span class="tag bull">bull ▲</span>':'<span class="tag bear">bear ▼</span>';
     const tr=document.createElement("tr");
     if(st.pos&&st.pos.sym===s) tr.classList.add("held");
     tr.innerHTML=`<td>${s}${st.pos&&st.pos.sym===s?" ●":""}</td><td>${p!=null?money(p):"—"}</td>`+
@@ -223,15 +226,15 @@ function drawSwarm(st){
   const c=cv.getContext("2d"); c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,w,h);
   c.strokeStyle="#182238"; c.beginPath(); c.moveTo(28,h-22); c.lineTo(w-8,h-22); c.stroke();
   c.beginPath(); c.moveTo(28,h-22); c.lineTo(28,14); c.stroke();
-  c.fillStyle="#4C5B78"; c.font="9px 'IBM Plex Mono'"; c.fillText("FAST EMA →",w-92,h-8);
-  c.save(); c.translate(12,96); c.rotate(-Math.PI/2); c.fillText("SLOW EMA →",0,0); c.restore();
-  const pop=st.pop||[]; if(!pop.length){ c.fillStyle="#4C5B78"; c.fillText("waiting for first run…",40,30); return; }
+  c.fillStyle="#4C5B78"; c.font="9px 'IBM Plex Mono'"; c.fillText("FAST τ (s) →",w-100,h-8);
+  c.save(); c.translate(12,96); c.rotate(-Math.PI/2); c.fillText("SLOW τ (s) →",0,0); c.restore();
+  const pop=(st.pop||[]).filter(cd=>cd.ft); if(!pop.length){ c.fillStyle="#4C5B78"; c.fillText("waiting for first live session…",40,30); return; }
   let mx=START,mn=START; pop.forEach(cd=>{const eq=candEquity(st,cd); if(eq>mx)mx=eq; if(eq<mn)mn=eq;});
   const span=Math.max(1,mx-mn);
-  const X=f=>34+(w-52)*(f-F_MIN)/(F_MAX-F_MIN), Y=s=>(h-26)-(h-46)*(s-S_MIN)/(S_MAX-S_MIN);
+  const X=f=>34+(w-52)*(f-FT_MIN)/(FT_MAX-FT_MIN), Y=s=>(h-26)-(h-46)*(s-ST_MIN)/(ST_MAX-ST_MIN);
   let champIdx=0,champEq=-1e9; pop.forEach((cd,i)=>{const eq=candEquity(st,cd); if(eq>champEq){champEq=eq;champIdx=i;}});
   pop.forEach((cd,i)=>{
-    const perf=(candEquity(st,cd)-mn)/span, x=X(cd.fast),y=Y(cd.slow);
+    const perf=(candEquity(st,cd)-mn)/span, x=X(cd.ft),y=Y(cd.st);
     if(i===champIdx){ c.beginPath(); c.arc(x,y,10,0,7); c.strokeStyle="rgba(167,139,250,.5)"; c.lineWidth=1.5; c.stroke(); c.fillStyle="#A78BFA"; }
     else c.fillStyle=`rgba(94,234,212,${0.28+perf*0.7})`;
     c.beginPath(); c.arc(x,y,3+perf*5+(i===champIdx?2:0),0,7); c.fill();
