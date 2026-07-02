@@ -1,38 +1,45 @@
 name: stock-sentinel
 
-# Runs the paper-trading bot every 5 minutes (GitHub's fastest free schedule).
-# Also runnable on demand from the Actions tab (workflow_dispatch).
+# v2: live session runner. Each run stays alive for up to ~5.5 h, streaming
+# real-time prices and trading every 15 s. The cron fires every 30 min during
+# (and around) US market hours purely as a starter/restarter — the concurrency
+# group makes extra runs wait, so there is always exactly one live session.
+# Hours are UTC: 13:00–21:30 covers 9:30–16:00 ET in both summer and winter;
+# the bot itself checks the clock and exits instantly when the market is closed.
 on:
   schedule:
-    - cron: "*/5 * * * *"
+    - cron: "0,30 13-21 * * 1-5"
   workflow_dispatch:
 
 permissions:
-  contents: write            # needed to commit state.json back to the repo
+  contents: write            # commit state.json back to the repo
 
 concurrency:
-  group: stock-sentinel      # never let two runs overlap
+  group: stock-sentinel      # one live session at a time; next run queues
   cancel-in-progress: false
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    timeout-minutes: 355     # hard stop under GitHub's 6 h job cap
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22   # native WebSocket needs Node 22+
 
-      - name: Run one tick
+      - name: Run live session
         env:
           FINNHUB_KEY: ${{ secrets.FINNHUB_KEY }}
         run: node bot.js
 
-      - name: Commit updated state
+      - name: Commit state (safety net — bot also pushes during the session)
+        if: always()
         run: |
           git config user.name  "stock-sentinel-bot"
           git config user.email "stock-sentinel-bot@users.noreply.github.com"
+          git pull --rebase || true
           git add state.json
-          git commit -m "state: tick update [skip ci]" || echo "no changes to commit"
-          git push
+          git commit -m "state: session end [skip ci]" || echo "no changes"
+          git push || true

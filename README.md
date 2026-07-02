@@ -1,9 +1,10 @@
 # Stock Sentinel — cloud (self-learning paper trader)
 
 An always-on **paper-trading** bot that runs on GitHub Actions with your computer off.
-It scans ~20 large-cap US stocks on live Finnhub quotes, breeds a population of
-EMA-crossover strategies, keeps the winners each generation, and trades the **champion**
-with pretend money. A read-only dashboard (`index.html`) shows it live.
+It streams **real-time prices for 50 large-cap US stocks** over Finnhub's websocket,
+makes a trading decision **every 15 seconds**, breeds a population of EMA-crossover
+strategies, keeps the winners each generation, and trades the **champion** with
+pretend money. A read-only dashboard (`index.html`) shows it live.
 
 > **Simulated money only.** Nothing real is ever bought or sold. This is for learning
 > what an unattended strategy actually does over weeks — not a green light to trade real money.
@@ -11,8 +12,8 @@ with pretend money. A read-only dashboard (`index.html`) shows it live.
 ## What's in here
 | File | Role |
 |------|------|
-| `bot.js` | The engine. One tick per run: fetch quotes → learn → trade champion → write `state.json`. Dependency-free (Node 18+). |
-| `.github/workflows/bot.yml` | Runs `bot.js` every 5 minutes and commits `state.json` back. |
+| `bot.js` | The engine. Runs a live session: stream 50 symbols → decide every 15 s → evolve every ~30 min → push `state.json` every 5 min. Dependency-free (Node 22+). |
+| `.github/workflows/bot.yml` | Starts/restarts the live session during market hours; one session at a time. |
 | `state.json` | The bot's memory (portfolio, trades, strategy population, champion, price history). |
 | `index.html` | Read-only dashboard. Reads `state.json`. Does **not** need to be open for the bot to run. |
 
@@ -40,12 +41,14 @@ Your dashboard is then at `https://<you>.github.io/<repo>/` and reads `state.jso
 (Or open `index.html` locally and paste the raw `state.json` URL into the box at the top.)
 
 ## What to expect
-- **Learns slowly, on purpose.** A 5-minute cron gives ~78 price samples per trading day, so the
-  swarm evolves over **days and weeks**, not minutes. The honest verdict is the win rate after it's
-  run unattended for a while.
-- **Trades only during market hours** (9:30–4 ET, weekdays). Outside that it logs "waiting" and does nothing.
+- **~1,500 decisions per trading day** (every 15 s), evolving the swarm roughly every 30 minutes —
+  trades can fire seconds apart when momentum flips. The honest verdict is still the win rate after
+  weeks of unattended running.
+- **Second-scale paper results flatter reality.** Bid/ask spread and slippage — which the sim does
+  not model — matter most at exactly this speed. Treat the numbers as a learning tool, not a forecast.
+- **Trades only during market hours** (9:30–4 ET, weekdays). Outside that, runs exit immediately.
 - **One position at a time**, all cash in/out, champion signals only.
-- Watch a run: **Actions tab → latest run** prints `tick / gen / champion / equity / holding`.
+- Watch it live: **Actions tab → the running session** streams BUY/SELL/Gen lines as they happen.
 
 ## Tuning (top of `bot.js`)
 `WATCH` (tickers), `POP`/`ELITE` (population), `GEN_TICKS` (how often it evolves),
