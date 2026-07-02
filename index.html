@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stock Sentinel — cloud dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#0A0F1C; --slate:#0F1626; --line:#22304C; --line-soft:#182238;
+    --text:#E6ECF7; --dim:#7486A6; --dimmer:#4C5B78;
+    --up:#34D399; --down:#FB5A76; --learn:#5EEAD4; --champ:#A78BFA;
+    --mono:'IBM Plex Mono',ui-monospace,monospace; --disp:'Space Grotesk','Segoe UI',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  body{
+    background:radial-gradient(1200px 600px at 15% -10%,#101a30 0,transparent 60%),
+      radial-gradient(900px 500px at 110% 0%,#0d1728 0,transparent 55%),var(--ink);
+    color:var(--text);font-family:var(--mono);font-size:13px;min-height:100vh;
+  }
+  ::selection{background:var(--learn);color:var(--ink);}
+  .rail{position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+    padding:12px 22px;background:rgba(10,15,28,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);}
+  .brand{font-family:var(--disp);font-weight:700;font-size:16px;letter-spacing:.03em;display:flex;align-items:center;gap:10px;}
+  .brand .mark{width:13px;height:13px;border-radius:50%;background:conic-gradient(from 210deg,var(--learn),var(--champ),var(--learn));box-shadow:0 0 14px 1px rgba(94,234,212,.4);}
+  .brand .thin{color:var(--dim);font-weight:400;}
+  .rail input{background:#0a1020;border:1px solid var(--line);border-radius:7px;color:var(--text);font:inherit;font-size:11px;padding:6px 9px;width:min(340px,42vw);}
+  .rail input:focus{outline:none;border-color:var(--learn);}
+  .rail .meta{margin-left:auto;display:flex;align-items:center;gap:10px;}
+  .pill{font-size:10.5px;letter-spacing:.12em;padding:4px 11px;border:1px solid var(--line);border-radius:20px;color:var(--dim);white-space:nowrap;}
+  .pill.live{color:var(--up);border-color:rgba(52,211,153,.5);}
+  .pill.off{color:var(--down);border-color:rgba(251,90,118,.5);}
+  .pill.warn{color:#F7931A;border-color:rgba(247,147,26,.5);}
+  .paper{font-family:var(--disp);font-weight:700;font-size:10px;letter-spacing:.18em;color:var(--ink);background:var(--learn);padding:4px 9px;border-radius:5px;}
+  main{padding:18px 22px 30px;}
+  .hero{display:flex;align-items:flex-end;gap:26px;flex-wrap:wrap;padding:4px 2px 18px;}
+  .k{font-size:9px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;}
+  .v{font-family:var(--disp);font-weight:700;font-size:15px;}
+  .v.champ{color:var(--champ);}
+  .hero .col{display:flex;flex-direction:column;gap:3px;}
+  .hero .note{max-width:360px;font-size:11px;line-height:1.6;color:var(--dim);border-left:2px solid var(--learn);padding-left:12px;margin-left:auto;}
+  #diag{font-size:11px;color:var(--dim);padding:0 2px 14px;}
+  #diag.err{color:var(--down);}
+  .grid{display:grid;gap:14px;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) 300px;
+    grid-template-areas:"swarm equity board" "stats equity board" "log log board";}
+  @media(max-width:1080px){.grid{grid-template-columns:1fr;grid-template-areas:"swarm" "equity" "board" "stats" "log";}}
+  .card{background:linear-gradient(180deg,var(--slate),#0d1424);border:1px solid var(--line);border-radius:12px;display:flex;flex-direction:column;overflow:hidden;}
+  .card>.hd{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line-soft);font-size:10px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;}
+  .card>.hd .accent{color:var(--learn);}
+  .card>.bd{padding:14px;flex:1;}
+  #swarm{grid-area:swarm;min-height:300px;} #equity{grid-area:equity;min-height:300px;}
+  #board{grid-area:board;} #stats{grid-area:stats;} #logc{grid-area:log;}
+  .chartWrap{position:relative;flex:1;min-height:260px;}canvas{position:absolute;inset:0;width:100%;height:100%;}
+  .statGrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:11px;}
+  .stat{background:#0a1020;border:1px solid var(--line-soft);border-radius:8px;padding:11px 12px;}
+  .stat span{font-size:9px;letter-spacing:.13em;color:var(--dim);text-transform:uppercase;}
+  .stat b{display:block;font-family:var(--disp);font-weight:700;font-size:18px;margin-top:5px;font-variant-numeric:tabular-nums;}
+  .pos{color:var(--up);}.neg{color:var(--down);}
+  #boardScroll{flex:1;overflow-y:auto;max-height:560px;}
+  table{width:100%;border-collapse:collapse;font-size:11px;}
+  th{text-align:right;font-size:9px;letter-spacing:.1em;color:var(--dim);font-weight:400;padding:8px 12px;border-bottom:1px solid var(--line-soft);position:sticky;top:0;background:#0d1424;text-transform:uppercase;}
+  th:first-child{text-align:left;}
+  td{padding:8px 12px;border-bottom:1px solid var(--line-soft);text-align:right;font-variant-numeric:tabular-nums;}
+  td:first-child{text-align:left;font-weight:600;font-family:var(--disp);}
+  tr.held td:first-child{color:var(--champ);}
+  .tag{font-size:8.5px;letter-spacing:.05em;padding:2px 6px;border-radius:4px;border:1px solid var(--line);color:var(--dim);}
+  .tag.bull{color:var(--up);border-color:rgba(52,211,153,.4);}.tag.bear{color:var(--down);border-color:rgba(251,90,118,.4);}
+  .tape{flex:1;overflow-y:auto;max-height:220px;padding:9px 14px;font-size:11px;line-height:1.75;}
+  .tape div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .tape .t{color:var(--dimmer);margin-right:9px;}
+  .tape .buy{color:var(--up);}.tape .sell{color:var(--down);}.tape .sig{color:var(--champ);}.tape .info{color:var(--dim);}
+</style>
+</head>
+<body>
+<div class="rail">
+  <div class="brand"><span class="mark"></span>Stock<span class="thin">Sentinel · cloud</span></div>
+  <input id="url" placeholder="state.json URL (blank = ./state.json)" autocomplete="off" spellcheck="false">
+  <div class="meta">
+    <span class="pill off" id="feed">LOADING…</span>
+    <span class="pill warn" id="mkt">MARKET · —</span>
+    <span class="paper">PAPER</span>
+  </div>
+</div>
+
+<main>
+  <div class="hero">
+    <div class="col"><span class="k">Champion genome</span><span class="v champ" id="champ">—</span></div>
+    <div class="col"><span class="k">Generation</span><span class="v" id="gen">0</span></div>
+    <div class="col"><span class="k">Best paper return</span><span class="v" id="bestRet">—</span></div>
+    <div class="col"><span class="k">Last update</span><span class="v" id="updated">—</span></div>
+    <p class="note">Runs in the cloud every 5 minutes with your computer off. It breeds a population of
+      strategies, keeps the winners, and trades the champion on live Finnhub quotes — 9:30–4 ET, paper money only.</p>
+  </div>
+  <div id="diag">Connecting…</div>
+
+  <div class="grid">
+    <section class="card" id="swarm">
+      <div class="hd"><span>Strategy swarm <span class="accent" id="swarmStatus"></span></span>
+        <span style="font-size:10px;color:var(--dim)"><span style="color:var(--learn)">●</span> candidate &nbsp; <span style="color:var(--champ)">●</span> champion</span></div>
+      <div class="chartWrap" id="swarmWrap"><canvas id="swarmCanvas"></canvas></div>
+    </section>
+
+    <section class="card" id="equity">
+      <div class="hd"><span>Equity curve</span><span class="accent" id="eqPnl">—</span></div>
+      <div class="chartWrap" id="eqWrap"><canvas id="eqCanvas"></canvas></div>
+    </section>
+
+    <section class="card" id="board">
+      <div class="hd">Market board <span class="accent" id="boardCount"></span></div>
+      <div id="boardScroll"><table><thead><tr><th>Sym</th><th>Price</th><th>Momentum</th><th>Read</th></tr></thead><tbody id="rows"></tbody></table></div>
+    </section>
+
+    <section class="card" id="stats">
+      <div class="hd">Portfolio</div>
+      <div class="bd"><div class="statGrid">
+        <div class="stat"><span>Total value</span><b id="sEquity">$10,000</b></div>
+        <div class="stat"><span>Profit / loss</span><b id="sPnl">$0.00</b></div>
+        <div class="stat"><span>Cash</span><b id="sCash">$10,000</b></div>
+        <div class="stat"><span>Holding</span><b id="sHold">none</b></div>
+        <div class="stat"><span>Trades</span><b id="sTrades">0</b></div>
+        <div class="stat"><span>Win rate</span><b id="sWin">—</b></div>
+      </div></div>
+    </section>
+
+    <section class="card" id="logc">
+      <div class="hd">Activity feed</div>
+      <div class="tape" id="tape"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const money = n => (n<0?"-$":"$") + Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const signPct = n => (n>=0?"+":"") + n.toFixed(2) + "%";
+const F_MIN=3,F_MAX=9,S_MIN=10,S_MAX=30, START=10000;
+
+function marketOpen(){
+  const et=new Intl.DateTimeFormat("en-US",{timeZone:"America/New_York",hour12:false,weekday:"short",hour:"numeric",minute:"numeric"})
+    .formatToParts(new Date()).reduce((a,p)=>(a[p.type]=p.value,a),{});
+  if(et.weekday==="Sat"||et.weekday==="Sun") return false;
+  const m=parseInt(et.hour)*60+parseInt(et.minute); return m>=570 && m<960;
+}
+const lastPrice = (st,s)=>{ const h=st.hist[s]; return h&&h.length?h[h.length-1]:null; };
+const candEquity = (st,c)=> c.cash + (c.pos ? c.pos.qty*lastPrice(st,c.pos.sym) : 0);
+function momentum(st,s){ const e=st.rb&&st.rb.ema?st.rb.ema[s]:null; if(!e||e.f==null||!e.s) return 0; return (e.f-e.s)/e.s*100; }
+
+function stateURL(){
+  const q=new URLSearchParams(location.search).get("state");
+  return ($("url").value.trim()) || q || "./state.json";
+}
+async function load(){
+  const u=stateURL();
+  try{
+    const r=await fetch(u+(u.includes("?")?"&":"?")+"cb="+Date.now(), {cache:"no-store"});
+    if(!r.ok) throw new Error("HTTP "+r.status+" fetching "+u);
+    const st=await r.json();
+    render(st);
+    $("diag").textContent = `Loaded ${u} · ${st.tick||0} ticks · refreshed ${new Date().toLocaleTimeString([],{hour12:false})}`;
+    $("diag").className=""; $("feed").textContent="FEED · LIVE"; $("feed").className="pill live";
+  }catch(e){
+    $("diag").textContent = "Could not load state: "+e.message+" — if this is a fresh repo, wait for the first scheduled run, or paste the raw state.json URL above.";
+    $("diag").className="err"; $("feed").textContent="FEED · ERROR"; $("feed").className="pill off";
+  }
+}
+
+function render(st){
+  const open=marketOpen();
+  $("mkt").textContent = open?"MARKET · OPEN":"MARKET · CLOSED"; $("mkt").className="pill "+(open?"live":"warn");
+  $("champ").textContent = st.champ?`EMA(${st.champ.fast} / ${st.champ.slow})`:"warming up…";
+  $("gen").textContent = st.gen||0;
+  $("bestRet").textContent = st.gen?signPct((st.bestRet||0)*100):"—";
+  $("updated").textContent = st.updated?new Date(st.updated).toLocaleTimeString([],{hour12:false}):"—";
+  $("swarmStatus").textContent = st.gen?`· gen ${st.gen}`:"";
+  $("boardCount").textContent = st.hist?Object.keys(st.hist).length+" symbols":"";
+
+  const posVal = st.pos?st.pos.qty*lastPrice(st,st.pos.sym):0;
+  const equity = st.cash + posVal, pnl = equity-START;
+  $("sEquity").textContent=money(equity);
+  const pe=$("sPnl"); pe.textContent=(pnl>=0?"+":"")+money(pnl); pe.className=pnl>=0?"pos":"neg";
+  $("eqPnl").textContent=(pnl>=0?"+":"")+money(pnl); $("eqPnl").style.color=pnl>=0?"var(--up)":"var(--down)";
+  $("sCash").textContent=money(st.cash);
+  $("sHold").textContent=st.pos?st.pos.sym:"none";
+  $("sTrades").textContent=(st.trades||[]).length;
+  const sells=(st.trades||[]).filter(t=>t.side==="SELL");
+  $("sWin").textContent=sells.length?Math.round(100*sells.filter(t=>t.pnl>0).length/sells.length)+"%":"—";
+
+  // board
+  const syms=Object.keys(st.hist||{}).sort((a,b)=>momentum(st,b)-momentum(st,a));
+  const warm = st.champ && st.rb && st.rb.count>st.champ.slow;
+  const tb=$("rows"); tb.innerHTML="";
+  for(const s of syms){
+    const p=lastPrice(st,s), mom=momentum(st,s), e=st.rb&&st.rb.ema?st.rb.ema[s]:null;
+    const read = !warm||!e||e.f==null ? '<span class="tag">warming</span>'
+      : e.f>e.s?'<span class="tag bull">bull ▲</span>':'<span class="tag bear">bear ▼</span>';
+    const tr=document.createElement("tr");
+    if(st.pos&&st.pos.sym===s) tr.classList.add("held");
+    tr.innerHTML=`<td>${s}${st.pos&&st.pos.sym===s?" ●":""}</td><td>${p!=null?money(p):"—"}</td>`+
+      `<td class="${mom>=0?'pos':'neg'}">${mom.toFixed(2)}%</td><td>${read}</td>`;
+    tb.appendChild(tr);
+  }
+
+  // tape
+  const tape=$("tape"); tape.innerHTML="";
+  (st.log||[]).slice(0,60).forEach(l=>{
+    let cls="info"; if(/^BUY/.test(l.msg))cls="buy"; else if(/^SELL/.test(l.msg))cls="sell"; else if(/champion/i.test(l.msg))cls="sig";
+    const d=document.createElement("div");
+    const t=l.t?new Date(l.t).toLocaleTimeString([],{hour12:false}):"";
+    d.innerHTML=`<span class="t">${t}</span><span class="${cls}">${l.msg}</span>`;
+    tape.appendChild(d);
+  });
+
+  drawSwarm(st); drawEquity(st);
+}
+
+function drawSwarm(st){
+  const cv=$("swarmCanvas"),wrap=$("swarmWrap"),w=wrap.clientWidth,h=wrap.clientHeight;
+  if(!w||!h) return;
+  const dpr=window.devicePixelRatio||1; cv.width=w*dpr; cv.height=h*dpr;
+  const c=cv.getContext("2d"); c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,w,h);
+  c.strokeStyle="#182238"; c.beginPath(); c.moveTo(28,h-22); c.lineTo(w-8,h-22); c.stroke();
+  c.beginPath(); c.moveTo(28,h-22); c.lineTo(28,14); c.stroke();
+  c.fillStyle="#4C5B78"; c.font="9px 'IBM Plex Mono'"; c.fillText("FAST EMA →",w-92,h-8);
+  c.save(); c.translate(12,96); c.rotate(-Math.PI/2); c.fillText("SLOW EMA →",0,0); c.restore();
+  const pop=st.pop||[]; if(!pop.length){ c.fillStyle="#4C5B78"; c.fillText("waiting for first run…",40,30); return; }
+  let mx=START,mn=START; pop.forEach(cd=>{const eq=candEquity(st,cd); if(eq>mx)mx=eq; if(eq<mn)mn=eq;});
+  const span=Math.max(1,mx-mn);
+  const X=f=>34+(w-52)*(f-F_MIN)/(F_MAX-F_MIN), Y=s=>(h-26)-(h-46)*(s-S_MIN)/(S_MAX-S_MIN);
+  let champIdx=0,champEq=-1e9; pop.forEach((cd,i)=>{const eq=candEquity(st,cd); if(eq>champEq){champEq=eq;champIdx=i;}});
+  pop.forEach((cd,i)=>{
+    const perf=(candEquity(st,cd)-mn)/span, x=X(cd.fast),y=Y(cd.slow);
+    if(i===champIdx){ c.beginPath(); c.arc(x,y,10,0,7); c.strokeStyle="rgba(167,139,250,.5)"; c.lineWidth=1.5; c.stroke(); c.fillStyle="#A78BFA"; }
+    else c.fillStyle=`rgba(94,234,212,${0.28+perf*0.7})`;
+    c.beginPath(); c.arc(x,y,3+perf*5+(i===champIdx?2:0),0,7); c.fill();
+  });
+}
+function drawEquity(st){
+  const cv=$("eqCanvas"),wrap=$("eqWrap"),w=wrap.clientWidth,h=wrap.clientHeight;
+  if(!w||!h) return;
+  const dpr=window.devicePixelRatio||1; cv.width=w*dpr; cv.height=h*dpr;
+  const c=cv.getContext("2d"); c.setTransform(dpr,0,0,dpr,0,0); c.clearRect(0,0,w,h);
+  const eq=((st.equity||[]).slice().reverse()).map(p=>p.v);
+  if(eq.length<2){ c.fillStyle="#4C5B78"; c.font="12px 'IBM Plex Mono'"; c.fillText("equity history builds as it trades…",14,26); return; }
+  let lo=Math.min(...eq,START),hi=Math.max(...eq,START); const pad=(hi-lo)*0.15||hi*0.001; lo-=pad; hi+=pad;
+  const X=i=>10+(w-20)*i/(eq.length-1), Y=v=>h-20-(h-32)*(v-lo)/(hi-lo);
+  c.strokeStyle="#182238"; c.fillStyle="#3d4a66"; c.font="9px 'IBM Plex Mono'";
+  for(let g=0;g<4;g++){const v=lo+(hi-lo)*g/3,y=Y(v); c.beginPath();c.moveTo(0,y);c.lineTo(w,y);c.stroke(); c.fillText(money(v),8,y-4);}
+  const y0=Y(START); c.strokeStyle="#4C5B78"; c.setLineDash([4,4]); c.beginPath(); c.moveTo(0,y0); c.lineTo(w,y0); c.stroke(); c.setLineDash([]);
+  const end=eq[eq.length-1];
+  c.strokeStyle=end>=START?"#34D399":"#FB5A76"; c.lineWidth=1.8; c.beginPath();
+  eq.forEach((v,i)=>{const x=X(i),y=Y(v); i?c.lineTo(x,y):c.moveTo(x,y);}); c.stroke();
+}
+
+$("url").addEventListener("change", load);
+load();
+setInterval(load, 60000);   // refresh every minute
+</script>
+</body>
+</html>
